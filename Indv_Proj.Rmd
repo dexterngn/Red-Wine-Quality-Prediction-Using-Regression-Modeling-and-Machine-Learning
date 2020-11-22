@@ -1,0 +1,568 @@
+---
+title: "Indv_Proj"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message=FALSE, warning=FALSE)
+```
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+td {  /* Table  */
+  font-size: 8px;
+}
+h1.title {
+  font-size: 38px;
+  color: DarkRed;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: DarkBlue;
+}
+h2 { /* Header 2 */
+    font-size: 22px;
+  color: DarkBlue;
+}
+
+code.r{ /* Code block */
+    font-size: 12px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 14px;
+}
+</style>
+
+```{r}
+library(dataQualityR) #for data cleaning
+library(e1071) #SVM Training & Testing Models
+library(mice) #deal with missing data
+library(corrplot) #plot for correlation matrix
+library(ggplot2) #visualization and plots
+library(ggpubr) #customizing ggplot2
+library(scales) #graphical scales map data to aesthetics
+library(caret) #deal with Classification And REgression Training CART
+library(dplyr) #data manipulation: filter and arrange
+library(tidyverse) #data manipulation
+library(sf) #plot mapping
+library(gganimate) #static visualization
+library(MASS) #deal with data set
+library(VIM) #tools for the visualization of missing or imputed values
+library(glmnet) #Lasso and Elastic-Net Regularization
+```
+
+# Outline:
+1. Introduction - Business Context
+2. Data Preparation
+2.1. Data collection
+2.2. Data Cleaning
+2.3. Data transformation
+2.4. Correlation Analysis
+3. Exploratory Data Analysis - EDA
+4. Modeling
+5. Evaluation
+
+# 1. Introduction
+
+# 2. Data Preparation
+- Fixed Acidity: are non-volatile acids that do not evaporate readily
+- Volatile Acidity: are high acetic acid in wine which leads to an unpleasant vinegar taste
+- Citric Acid: acts as a preservative to increase acidity. When in small quantities, adds freshness and flavor to wines
+- Residual Sugar: is the amount of sugar remaining after fermentation stops. The key is to have a perfect balance between - sweetness and sourness. It is important to note that wines > 45g/ltrs are sweet
+- Chlorides: the amount of salt in the wine
+- Free Sulfur Dioxide: it prevents microbial growth and the oxidation of wine
+- Total Sulfur Dioxide: is the amount of free + bound forms of SO2
+- Density: sweeter wines have a higher density
+- pH: describes the level of acidity on a scale of 0–14. Most wines are always between 3–4 on the pH scale
+- Alcohol: available in small quantities in wines makes the drinkers sociable
+- Sulphates: a wine additive that contributes to SO2 levels and acts as an antimicrobial and antioxidant
+- Quality: which is the output variable/predictor
+
+## 2.1. Data collection
+
+## 2.2. Data cleaning
+
+- Data reading
+```{r}
+df<-read.csv("winequality-red.csv")
+dim(df)
+```
+- Data overview
+```{r}
+str(df)
+summary(df)
+```
+
+- having a data report for cat and num 
+```{r}
+num.file <- paste(getwd(), "/dqames_num.csv", sep= "")
+cat.file <- paste(getwd(), "/dqames_cat.csv", sep= "")
+checkDataQuality(data= df, out.file.num= num.file, out.file.cat= cat.file)
+```
+
+
+- Checking missing values
+```{r}
+aggr_plot <- aggr(df, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(df), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+
+## 2.4. Correlation analysis
+- Build correlation and order by decreasing
+```{r}
+set.seed(123)
+library(dplyr)
+library(tidyr)
+
+cor(df) %>%
+  as.data.frame() %>%
+  mutate(var1 = rownames(.)) %>%
+  gather(var2, value, -var1) %>%
+  arrange(desc(value)) %>%
+  group_by(value) %>%
+  filter(row_number()==1)
+```
+
+```{r}
+dfcor <- cor(df)
+corrplot(dfcor, method = "color", addCoef.col = "black",number.cex = .6,
+         tl.col = "black", tl.srt = 90, diag = FALSE)
+```
+
+- Build correlation atts with Quality variable
+```{r}
+dfcor <- cor(df)
+quality_cor <- dfcor[,12]
+absoutcome_cor <- abs(quality_cor)
+head(absoutcome_cor[order(absoutcome_cor, decreasing = TRUE)],12)
+```
+
+# 3. Exploratory Data Analysis - EDA
+
+## 3.1. Overall Quality
+```{r}
+q1 <- ggplot(df, aes(quality))+ 
+  geom_histogram() + 
+  labs(title = "Histogram of quality") + 
+  theme(plot.title=element_text(hjust=0.5)) +
+  geom_vline(aes(xintercept=mean(quality)), color="blue", linetype="dashed", size=1) +
+  geom_text(aes(x=5.6, label="Mean Value", y=400), colour="red", angle=90, vjust = 1.2, text=element_text(size=11))
+q1
+
+q2 <- ggplot(df, aes(sample=quality)) +
+  stat_qq(color="dodgerblue4") + 
+  stat_qq_line(color="red") +
+  scale_y_continuous(labels=function(y){y/10^6}) +
+  labs(title="QQ Plot for quality", y="Ordered Values") +
+  theme(plot.title=element_text(hjust=0.5))
+q2
+```
+
+## 3.2. Plotting the marginal distributions of key numerical quantities of interest
+
+```{r}
+p1 <- ggplot(df, aes(x=fixed.acidity)) + 
+  geom_density()
+p1 + geom_vline(aes(xintercept=mean(fixed.acidity)),
+            color="blue", linetype="dashed", size=1)
+
+p2 <- ggplot(df, aes(x=volatile.acidity)) + 
+  geom_density()
+p2 + geom_vline(aes(xintercept=mean(volatile.acidity)),
+            color="blue", linetype="dashed", size=1)
+
+p3 <- ggplot(df, aes(x=citric.acid)) + 
+  geom_density()
+p3 + geom_vline(aes(xintercept=mean(citric.acid)),
+            color="blue", linetype="dashed", size=1)
+
+p4 <- ggplot(df, aes(x=residual.sugar)) + 
+  geom_density()
+p4 + geom_vline(aes(xintercept=mean(residual.sugar)),
+            color="blue", linetype="dashed", size=1)
+
+p5 <- ggplot(df, aes(x=chlorides)) + 
+  geom_density()
+p5 + geom_vline(aes(xintercept=mean(chlorides)),
+            color="blue", linetype="dashed", size=1)
+
+p6 <- ggplot(df, aes(x=free.sulfur.dioxide)) + 
+  geom_density()
+p6 + geom_vline(aes(xintercept=mean(free.sulfur.dioxide)),
+            color="blue", linetype="dashed", size=1)
+
+p7 <- ggplot(df, aes(x=total.sulfur.dioxide)) + 
+  geom_density()
+p7 + geom_vline(aes(xintercept=mean(total.sulfur.dioxide)),
+            color="blue", linetype="dashed", size=1)
+
+p8 <- ggplot(df, aes(x=density)) + 
+  geom_density()
+p8 + geom_vline(aes(xintercept=mean(density)),
+            color="blue", linetype="dashed", size=1)
+
+p9 <- ggplot(df, aes(x=pH)) + 
+  geom_density()
+p9 + geom_vline(aes(xintercept=mean(pH)),
+            color="blue", linetype="dashed", size=1)
+
+p10 <- ggplot(df, aes(x=sulphates)) + 
+  geom_density()
+p10 + geom_vline(aes(xintercept=mean(sulphates)),
+            color="blue", linetype="dashed", size=1)
+
+p11 <- ggplot(df, aes(x=alcohol)) + 
+  geom_density()
+p11 + geom_vline(aes(xintercept=mean(alcohol)),
+            color="blue", linetype="dashed", size=1)
+
+ggarrange(p1, p2, p3, p4, nrow = 2, ncol =2)
+ggarrange(p5, p6, p7, p8, nrow = 2, ncol =2)
+ggarrange(p9, p10, p11, nrow = 2, ncol =2)
+```
+
+```{r}
+b1 <- boxplot(df$fixed.acidity, col="slategray2", pch=19)
+b2 <- boxplot(df$volatile.acidity, col="slategray2", pch=19)
+b3 <- boxplot(df$citric.acid, col="slategray2", pch=19)
+b4 <- boxplot(df$residual.sugar, col="slategray2", pch=19)
+b5 <- boxplot(df$chlorides, col="slategray2", pch=19)
+b6 <- boxplot(df$free.sulfur.dioxide, col="slategray2", pch=19)
+b7 <- boxplot(df$total.sulfur.dioxide, col="slategray2", pch=19)
+b8 <- boxplot(df$density, col="slategray2", pch=19)
+b9 <- boxplot(df$pH, col="slategray2", pch=19)
+b10 <- boxplot(df$sulphates, col="slategray2", pch=19)
+b11 <- boxplot(df$alcohol, col="slategray2", pch=19)
+```
+
+## 3.3. Inspecting quality against numerical variables of interest
+
+```{r}
+g1 <- ggplot(df, aes(factor(quality), fixed.acidity, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "fixed.acidity", title = "Boxplot of Quality vs. fixed.acidity") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g1
+
+g2 <- ggplot(df, aes(factor(quality), volatile.acidity, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "volatile.acidity", title = "Boxplot of Quality vs. volatile.acidity") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g2
+
+g3 <- ggplot(df, aes(factor(quality), citric.acid, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "citric.acid", title = "Boxplot of Quality vs. citric.acid") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g3
+
+g4 <- ggplot(df, aes(factor(quality), residual.sugar, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "residual.sugar", title = "Boxplot of Quality vs. residual.sugar") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g4
+
+ggarrange(g1, g2, g3, g4, nrow = 2, ncol =2)
+
+# It seems there’s positive relationship between citric acid and quality
+# It seems there’s negative relationship between volatile acidity and quality
+```
+
+```{r}
+g5 <- ggplot(df, aes(factor(quality), chlorides, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "Quality", y = "chlorides", title = "Boxplot of Quality vs. chlorides") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g5
+
+g6 <- ggplot(df, aes(factor(quality), free.sulfur.dioxide, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "free.sulfur.dioxide", title = "Boxplot of quality vs. free.sulfur.dioxide") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g6
+
+g7 <- ggplot(df, aes(factor(quality), total.sulfur.dioxide, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "total.sulfur.dioxide", title = "Boxplot of quality vs. total.sulfur.dioxide") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g7
+
+g8 <- ggplot(df, aes(factor(quality), density, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "density", title = "Boxplot of quality vs. density") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g8
+
+ggarrange(g5, g6, g7, g8, nrow = 2, ncol =2)
+
+# It seems there’s negative relationship between density acid and quality
+```
+
+```{r}
+g9 <- ggplot(df, aes(factor(quality), pH, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "pH", title = "Boxplot of Quality vs. pH") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g9
+
+g10 <- ggplot(df, aes(factor(quality), sulphates, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "sulphates", title = "Boxplot of quality vs. sulphates") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g10
+
+g11 <- ggplot(df, aes(factor(quality), alcohol, fill=factor(quality))) + 
+  geom_boxplot() +
+  labs(x = "quality", y = "alcohol", title = "Boxplot of quality vs. alcohol") + 
+  theme(legend.position = 'none', plot.title = element_text(size = 9, hjust=0.5))
+g11
+
+ggarrange(g9, g10, g11, nrow = 2, ncol =2)
+
+# It seems there’s positive relationship between alcohol and quality
+# It seems there’s positive relationship between sulphates and quality
+```
+
+## 3.3. Inspecting relationship among numerical variables of interest
+```{r}
+s1 <- ggplot(df, aes(x=fixed.acidity, y=citric.acid)) +
+  geom_point(color="dodgerblue4",size=0.7) + 
+  labs(title="fixed.acidity vs. citric.acid") +
+  geom_smooth(formula=y~x,method=lm, color="red") +
+  theme(plot.title=element_text(hjust=0.5))
+s1
+
+s2 <- ggplot(df, aes(x=fixed.acidity, y=density)) +
+  geom_point(color="dodgerblue4",size=0.7) + 
+  labs(title="fixed.acidity vs. density") +
+  geom_smooth(formula=y~x,method=lm, color="red") +
+  theme(plot.title=element_text(hjust=0.5))
+s2
+
+s3 <- ggplot(df, aes(x=free.sulfur.dioxide, y=total.sulfur.dioxide)) +
+  geom_point(color="dodgerblue4",size=0.7) + 
+  labs(title="free.sulfur.dioxide vs. total.sulfur.dioxide") +
+  geom_smooth(formula=y~x,method=lm, color="red") +
+  theme(plot.title=element_text(hjust=0.5))
+s3
+
+s4 <- ggplot(df, aes(x=fixed.acidity, y=pH)) +
+  geom_point(color="dodgerblue4",size=0.7) + 
+  labs(title="fixed.acidity vs. pH") +
+  geom_smooth(formula=y~x,method=lm, color="red") +
+  theme(plot.title=element_text(hjust=0.5))
+s4
+
+ggarrange(s1, s2, s3, s4, nrow = 2, ncol =2)
+
+# It seems there’s positive relationship between fixed.acidity and citric.acid
+# It seems there’s positive relationship between fixed.acidity and density
+# It seems there’s positive relationship between free.sulfur.dioxide and total.sulfur.dioxide
+# It seems there’s negative relationship between fixed.acidity and pH
+```
+
+## 3.4. Inspecting 3D
+```{r}
+i1<- ggplot(df, aes(x=factor(round(alcohol)), y=citric.acid)) + 
+  geom_boxplot(aes(colour = factor(quality))) +
+  labs(title="Alcohol + Citric.Acid vs. Quality") + 
+  theme(plot.title=element_text(hjust=0.5))
+i1
+
+i2 <- ggplot(df, aes(x=factor(round(alcohol)), y=volatile.acidity)) + 
+  geom_boxplot(aes(colour = factor(quality))) +
+  labs(title="Alcohol + Volatile.Acidity vs. Quality") + 
+  theme(plot.title=element_text(hjust=0.5))
+i2
+
+i3 <- ggplot(df, aes(x=factor(round(alcohol)), y=chlorides)) + 
+  geom_boxplot(aes(colour = factor(quality))) +
+  labs(title="Alcohol + Chlorides vs. Quality") + ylim(0, 0.3)
+  theme(plot.title=element_text(hjust=0.5))
+i3
+```
+
+# 4. Modeling 
+## 4.1. Modeling with top 5 variables
+
+## 4.1. Model 1 with top 5 highest correlation with TotalIncidents
+```{r}
+lm0 <- lm(quality ~ alcohol + volatile.acidity +  sulphates + citric.acid + total.sulfur.dioxide, data = df)
+summary(lm0)
+```
+```{r}
+lm1 <- lm(quality ~ alcohol + volatile.acidity +  sulphates + total.sulfur.dioxide, data = df)
+summary(lm1)
+```
+
+Using CV
+```{r}
+# Define training control
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10) #cv Cross-Validation
+# Train the model
+model1 <- train(quality ~ alcohol + volatile.acidity +  sulphates + total.sulfur.dioxide, data = df, method = "lm", trControl = train.control)
+# Summarize the results
+summary(model1)
+print(model1)
+```
+
+## 4.2. LASSO
+```{r}
+library(glmnet)
+x <- model.matrix(quality~., df)[,-1]
+y <- df$quality
+mod <- cv.glmnet(as.matrix(x), y, alpha=1)
+```
+
+To see the coefficients with the minimum cross-validation error
+To see the coefficients with the "largest value of lambda such that error is within 1 standard error of the minimum:
+```{r}
+as.matrix(coef(mod, mod$lambda.min))
+as.matrix(coef(mod, mod$lambda.1se))
+```
+
+You can also select any other value of lambda that you want. Coefficients that are 0 have been dropped out of the model
+```{r}
+CF <- as.matrix(coef(mod, mod$lambda.1se))
+CF[CF!=0,]
+```
+
+Using Model 2 using above independent variables
+```{r}
+lm2 <- lm(quality ~ fixed.acidity + volatile.acidity + chlorides + total.sulfur.dioxide + sulphates + alcohol, data=df)
+summary(lm2)
+```
+
+Using CV
+```{r}
+# Define training control
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10) #cv Cross-Validation
+# Train the model
+model2<- train(quality ~ fixed.acidity + volatile.acidity + chlorides + total.sulfur.dioxide + sulphates + alcohol,data = df, method = "lm",
+               trControl = train.control)
+# Summarize the results
+summary(model2)
+print(model2)
+```
+
+## 4.3 Random Forest Model 3
+```{r}
+library(randomForest)
+library(mlbench)
+library(caret) # use createDataPartition() function 
+set.seed(95014)
+
+# partition 
+#Create Evaluation Sets
+set.seed(123)
+n = nrow(df)
+trainIndex = sample(1:n, size = round(0.7*n), replace=FALSE)
+```
+
+```{r}
+#Creates training and test set from observations 
+training = df[trainIndex,]
+testing = df[-trainIndex,]
+
+model3 <- randomForest(quality ~ ., training, mtry = 3, 
+                         importance = TRUE, na.action = na.omit)
+print(model3)
+
+#Plot the error vs the number of trees graph 
+plot(model3) 
+```
+
+```{r}
+varImp(model3)
+varImpPlot(model3,type=2)
+```
+
+```{r}
+# obtain MSE as of last element in fit$mse
+# which should match the output from printout
+model3$mse[length(model3$mse)]
+# take square root to calculate RMSE for the model
+sqrt(model3$mse[length(model3$mse)])
+```
+
+```{r}
+# now illustrate how to calculate RMSE on test data vs. training data
+predValues <- predict(model3,testing)
+
+# we can calculate it  directly 
+sqrt(mean((testing$quality -predValues)^2)) #RMSE
+mean(abs(testing$quality -predValues)) #MAE
+```
+
+Evaluation dataframe
+```{r}
+Model <- c("Model 1", "Model 2", "Model 3")
+R_squared <- c(0.3479, 0.3546, 0.4850)
+RMSE <- c(0.6549, 0.6515, 0.5843)
+MAE <- c(0.5092899, 0.5063, 0.4222)
+ml <- data.frame(Model, R_squared, RMSE, MAE)
+```
+
+Plot
+```{r}
+library(gridExtra)
+p1 <- ggplot(ml, aes(Model, RMSE)) + geom_point(aes(colour = factor(Model), size = 4)) + labs(title="RMSE") + theme(plot.title=element_text(hjust=0.5), axis.title.y = element_blank(),axis.title.x = element_blank(), legend.position="none")
+p2 <- ggplot(ml, aes(Model, R_squared)) + geom_point(aes(colour = factor(Model), size = 4)) + labs(title="R-Squared") + theme(plot.title=element_text(hjust=0.5), axis.title.y = element_blank(),axis.title.x = element_blank(), legend.position="none")
+p3 <- ggplot(ml, aes(Model, MAE)) + geom_point(aes(colour = factor(Model), size = 4)) + labs(title="MAE") + theme(plot.title=element_text(hjust=0.5), axis.title.y = element_blank(),axis.title.x = element_blank(), legend.position="none")
+grid.arrange(p2,p1,p3, ncol=3)
+```
+
+## 4.4. Clustering
+
+Cleaning data
+```{r}
+df_new <- df
+df_new$quality_group <- ifelse(df_new$quality < 5, "1", ifelse((df_new$quality >= 5) & (df_new$quality <= 6), "2", "3"))
+df_new[,12]<-NULL # Order column looks like meaningless
+df_new[,12]<-NULL # Order column looks like meaningless
+str(df_new)
+```
+
+```{r}
+df_new$quality_group <- as.numeric(df_new$quality_group)
+str(df_new)
+View(df_new)
+```
+
+```{r}
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+```
+
+Standardize data
+```{r}
+scale(df_new)
+head(df_new)
+```
+
+Elbow Method
+```{r}
+set.seed(123)
+fviz_nbclust(df_new, kmeans, method = "wss")
+```
+
+
+Using K-means
+```{r}
+set.seed(123)
+km <- kmeans(df_new, 2, nstart = 25)
+df_new$cluster = km$cluster
+View(df_new)
+ggplot(df_new,aes(pH,alcohol,color=as.factor(cluster)))+geom_point()
+ggplot(df_new,aes(pH,sulphates,color=as.factor(cluster)))+geom_point()
+ggplot(df_new,aes(pH,total.sulfur.dioxide,color=as.factor(cluster)))+geom_point()
+ggplot(df_new,aes(sulphates,total.sulfur.dioxide,color=as.factor(cluster)))+geom_point()
+ggplot(df_new,aes(alcohol,sulphates,color=as.factor(cluster)))+geom_point()
+ggplot(df_new,aes(alcohol,volatile.acidity,color=as.factor(cluster)))+geom_point()
+```
+
